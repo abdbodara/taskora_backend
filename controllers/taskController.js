@@ -8,54 +8,40 @@ const getTasks = async (req, res) => {
     const { page = 1, limit = 10, search = "", status, priority } = req.query;
     const offset = (page - 1) * limit;
     const userId = req.user.id;
- 
+
+    // Basic where clause
     const baseWhere = { userId };
     const searchConditions = [];
- 
+
     if (search) {
       searchConditions.push(
         { title: { [Op.iLike]: `%${search}%` } },
-        { description: { [Op.iLike]: `%${search}%` } },
-        { "$technicians.name$": { [Op.iLike]: `%${search}%` } },
-        { "$technicians.email$": { [Op.iLike]: `%${search}%` } }
+        { description: { [Op.iLike]: `%${search}%` } }
       );
     }
- 
+
     const whereCondition = search
       ? { ...baseWhere, [Op.or]: searchConditions }
       : baseWhere;
- 
+
     if (status) whereCondition.status = status;
     if (priority) whereCondition.priority = priority;
- 
-    // Step 1: Get distinct task IDs with pagination
+
     const taskIdsResult = await Task.findAll({
       where: whereCondition,
-      include: search
-        ? [
-            {
-              model: Technician,
-              as: "technicians",
-              through: { attributes: [] },
-              attributes: [],
-              required: false,
-            },
-          ]
-        : [],
       attributes: ["id"],
+      offset: parseInt(offset),
+      limit: parseInt(limit),
       order: [
         ["dueDate", "ASC"],
         ["priority", "DESC"],
         ["createdAt", "DESC"],
       ],
-      offset: parseInt(offset),
-      limit: parseInt(limit),
       subQuery: false,
     });
- 
-    const taskIds = taskIdsResult.map((task) => task.id);
- 
-    // Step 2: Get full tasks by those IDs
+
+    const taskIds = taskIdsResult.map((t) => t.id);
+
     const tasks = await Task.findAll({
       where: { id: taskIds },
       include: [
@@ -64,7 +50,6 @@ const getTasks = async (req, res) => {
           as: "technicians",
           through: { attributes: [] },
           attributes: ["id", "name", "email"],
-          required: false,
         },
       ],
       order: [
@@ -73,10 +58,11 @@ const getTasks = async (req, res) => {
         ["createdAt", "DESC"],
       ],
     });
- 
-    // Step 3: Get correct count (only distinct tasks)
-    const totalCount = await Task.count({ where: whereCondition });
- 
+
+    const totalCount = await Task.count({
+      where: whereCondition,
+    });
+
     res.json({
       success: true,
       data: tasks,
@@ -97,8 +83,6 @@ const getTasks = async (req, res) => {
     });
   }
 };
-
-
 
 const getTask = async (req, res) => {
   try {
